@@ -12,6 +12,14 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 from datetime import timedelta
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+TEST_API_KEY_ID  = os.getenv("TEST_API_KEY_ID")
+
+TEST_KEY_SECRET = os.getenv("TEST_KEY_SECRET")
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,6 +49,7 @@ INSTALLED_APPS = [
     'users',
     'gym',
     "members",
+    "billing",
     'rest_framework_simplejwt',
 ]
 
