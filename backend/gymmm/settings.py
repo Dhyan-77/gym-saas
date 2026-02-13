@@ -15,6 +15,11 @@ from datetime import timedelta
 import os
 from dotenv import load_dotenv
 import dj_database_url
+from corsheaders.defaults import default_headers
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "authorization",
+]
 
 load_dotenv()
 
@@ -53,9 +58,11 @@ INSTALLED_APPS = [
     "members",
     "billing",
     'rest_framework_simplejwt',
+      'corsheaders',
 ]
 
 MIDDLEWARE = [
+     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",  # ✅ add this
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -171,3 +178,15 @@ SIMPLE_JWT = {
 
    
 }
+
+
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+
+CORS_ALLOW_CREDENTIALS = True
