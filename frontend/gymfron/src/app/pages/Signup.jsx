@@ -1,110 +1,184 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Dumbbell } from "lucide-react";
+import { api } from "../../api";
 
 export default function Signup() {
   const navigate = useNavigate();
+
   const [formData, setFormData] = useState({
-    name: "",
+    name: "", // UI only (backend doesn't use it)
     email: "",
     password: "",
     confirmPassword: "",
   });
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    // Mock signup - in real app would create account
-    navigate("/gym-setup");
-  };
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (e) => {
+  e.preventDefault();
+  setError("");
+
+  if (formData.password !== formData.confirmPassword) {
+    setError("Passwords do not match.");
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    // ✅ backend expects only email + password
+    await api.post("/api/auth/signup/", {
+      email: formData.email,
+      password: formData.password,
+    });
+
+    // you DON'T auto-login in backend signup, so redirect to login
+    navigate("/");
+  } catch (err) {
+    setError(extractApiError(err));
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
-    <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
-      {/* Gradient background effect */}
+    <div className="relative min-h-[100svh] bg-black text-white flex items-center justify-center px-4 py-10">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl" />
+        <div className="absolute top-20 left-6 w-64 h-64 bg-purple-600/20 rounded-full blur-3xl" />
+        <div className="absolute bottom-20 right-6 w-64 h-64 bg-blue-600/20 rounded-full blur-3xl" />
       </div>
 
       <div className="w-full max-w-md relative z-10">
-        {/* Logo/Brand */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white/10 rounded-2xl mb-4 backdrop-blur-sm">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-white/10 rounded-2xl mb-4 backdrop-blur-md shadow-lg">
             <Dumbbell className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-4xl mb-2 bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
+
+          <h1 className="text-3xl font-semibold bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
             GymFlow
           </h1>
-          <p className="text-gray-400">Start managing your gym today</p>
+
+          <p className="text-sm text-gray-400 mt-1">
+            Start managing your gym today
+          </p>
         </div>
 
-        {/* Signup Form */}
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8">
-          <h2 className="text-2xl mb-6">Create Account</h2>
-          
+        <div className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 shadow-2xl">
+          <h2 className="text-2xl font-semibold mb-6 text-center">
+            Create Account
+          </h2>
+
+          {error && (
+            <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-sm break-words">
+              {error}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label htmlFor="name" className="block text-sm text-gray-300 mb-2">
+              <label className="block text-sm text-gray-300 mb-2">
                 Full Name
               </label>
               <input
-                id="name"
                 type="text"
+                autoComplete="name"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-white/30 transition-colors"
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
+                className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-transparent transition-all"
                 placeholder="John Doe"
                 required
               />
             </div>
 
             <div>
-              <label htmlFor="email" className="block text-sm text-gray-300 mb-2">
+              <label className="block text-sm text-gray-300 mb-2">
                 Email Address
               </label>
               <input
-                id="email"
                 type="email"
+                inputMode="email"
+                autoComplete="email"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-white/30 transition-colors"
+                onChange={(e) =>
+                  setFormData({ ...formData, email: e.target.value })
+                }
+                className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-transparent transition-all"
                 placeholder="you@example.com"
                 required
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm text-gray-300 mb-2">
+              <label className="block text-sm text-gray-300 mb-2">
                 Password
               </label>
-              <input
-                id="password"
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-white/30 transition-colors"
-                placeholder="••••••••"
-                required
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  minLength={8}
+                  value={formData.password}
+                  onChange={(e) =>
+                    setFormData({ ...formData, password: e.target.value })
+                  }
+                  className="w-full px-4 py-3.5 pr-12 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-transparent transition-all"
+                  placeholder="Minimum 8 characters"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
             </div>
 
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm text-gray-300 mb-2">
+              <label className="block text-sm text-gray-300 mb-2">
                 Confirm Password
               </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                value={formData.confirmPassword}
-                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-white/30 transition-colors"
-                placeholder="••••••••"
-                required
-              />
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  minLength={8}
+                  value={formData.confirmPassword}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      confirmPassword: e.target.value,
+                    })
+                  }
+                  className="w-full px-4 py-3.5 pr-12 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-transparent transition-all"
+                  placeholder="Re-enter password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"
+                >
+                  {showConfirmPassword ? "Hide" : "Show"}
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-start text-sm">
-              <input type="checkbox" className="mr-2 mt-1 rounded bg-white/5 border-white/10" required />
-              <label className="text-gray-400">
+            <div className="flex items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded bg-white/5 border-white/20"
+                required
+              />
+              <label className="text-gray-400 leading-relaxed">
                 I agree to the{" "}
                 <a href="#" className="text-white hover:underline">
                   Terms of Service
@@ -118,9 +192,10 @@ export default function Signup() {
 
             <button
               type="submit"
-              className="w-full py-3 bg-white text-black rounded-xl hover:bg-gray-200 transition-all duration-200 shadow-lg hover:shadow-xl"
+              disabled={loading}
+              className="w-full py-3.5 rounded-xl font-medium bg-gradient-to-r from-white to-gray-300 text-black transition-all duration-200 shadow-lg hover:shadow-xl active:scale-[0.98] disabled:opacity-60"
             >
-              Create Account
+              {loading ? "Creating..." : "Create Account"}
             </button>
           </form>
 

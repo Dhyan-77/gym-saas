@@ -1,294 +1,308 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Navigation from "../components/Navigation";
 import { AlertCircle, CheckCircle, Clock } from "lucide-react";
+import { api } from "../../api";
+import { getActiveGymId } from "../../utils/gym";
+
+function statusFromDaysLeft(daysLeft) {
+  if (daysLeft == null) return "active";
+  if (daysLeft < 0) return "expired";
+  if (daysLeft <= 7) return "expiring";
+  return "active";
+}
+
+function parseError(err) {
+  const data = err?.response?.data;
+
+  if (typeof data?.detail === "string") return data.detail;
+
+  if (data && typeof data === "object") {
+    return Object.entries(data)
+      .map(([k, v]) => (Array.isArray(v) ? `${k}: ${v.join(" ")}` : `${k}: ${v}`))
+      .join("\n");
+  }
+
+  return err?.message || "Something went wrong";
+}
 
 export default function Subscriptions() {
-  // Mock data - sorted by days remaining (ascending)
-  const members = [
-    {
-      id: "5",
-      name: "David Brown",
-      email: "david@example.com",
-      phone: "(555) 567-8901",
-      plan: "Premium",
-      endDate: "2026-01-15",
-      daysRemaining: -21,
-      status: "expired",
-    },
-    {
-      id: "6",
-      name: "Lisa Anderson",
-      email: "lisa@example.com",
-      phone: "(555) 678-9012",
-      plan: "Standard",
-      endDate: "2026-02-07",
-      daysRemaining: 2,
-      status: "expiring",
-    },
-    {
-      id: "7",
-      name: "Robert Taylor",
-      email: "robert@example.com",
-      phone: "(555) 789-0123",
-      plan: "VIP",
-      endDate: "2026-02-09",
-      daysRemaining: 4,
-      status: "expiring",
-    },
-    {
-      id: "8",
-      name: "Jennifer Lee",
-      email: "jennifer@example.com",
-      phone: "(555) 890-1234",
-      plan: "Standard",
-      endDate: "2026-02-10",
-      daysRemaining: 5,
-      status: "expiring",
-    },
-    {
-      id: "2",
-      name: "Sarah Johnson",
-      email: "sarah@example.com",
-      phone: "(555) 234-5678",
-      plan: "Standard",
-      endDate: "2026-02-15",
-      daysRemaining: 10,
-      status: "expiring",
-    },
-    {
-      id: "4",
-      name: "Emily Wilson",
-      email: "emily@example.com",
-      phone: "(555) 456-7890",
-      plan: "Standard",
-      endDate: "2026-02-20",
-      daysRemaining: 15,
-      status: "expiring",
-    },
-    {
-      id: "3",
-      name: "Mike Davis",
-      email: "mike@example.com",
-      phone: "(555) 345-6789",
-      plan: "VIP",
-      endDate: "2026-02-28",
-      daysRemaining: 23,
-      status: "active",
-    },
-    {
-      id: "1",
-      name: "John Smith",
-      email: "john@example.com",
-      phone: "(555) 123-4567",
-      plan: "Premium",
-      endDate: "2026-03-01",
-      daysRemaining: 24,
-      status: "active",
-    },
-  ];
-
   const [selectedTab, setSelectedTab] = useState("all");
+  const [gymId, setGymId] = useState(null);
 
-  const filteredMembers = members.filter((member) => {
-    if (selectedTab === "expiring") return member.status === "expiring";
-    if (selectedTab === "expired") return member.status === "expired";
-    return true;
-  });
+  const [allMembers, setAllMembers] = useState([]);
+  const [expiringMembers, setExpiringMembers] = useState([]);
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case "expired":
-        return <AlertCircle className="w-5 h-5 text-red-400" />;
-      case "expiring":
-        return <Clock className="w-5 h-5 text-orange-400" />;
-      default:
-        return <CheckCircle className="w-5 h-5 text-green-400" />;
+  const [loadingGym, setLoadingGym] = useState(true);
+  const [loadingMembers, setLoadingMembers] = useState(true);
+  const [error, setError] = useState("");
+
+  // 1) load active gym id
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadGym() {
+      setLoadingGym(true);
+      setError("");
+
+      try {
+        // ✅ FIX: correct token key
+        const token = localStorage.getItem("access");
+        if (!token) {
+          window.location.href = "/";
+          return;
+        }
+
+        const gymsRes = await api.get("/api/gyms/");
+        const gyms = Array.isArray(gymsRes.data) ? gymsRes.data : [];
+
+        if (!gyms.length) {
+          window.location.href = "/gym-setup";
+          return;
+        }
+
+        // ✅ FIX: use selected gym (multi gym support)
+        const id = getActiveGymId(gyms);
+        if (!id) {
+          window.location.href = "/gym-setup";
+          return;
+        }
+
+        if (!mounted) return;
+        setGymId(id);
+      } catch (err) {
+        if (mounted) setError(parseError(err));
+      } finally {
+        if (mounted) setLoadingGym(false);
+      }
     }
-  };
+
+    loadGym();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // 2) load members when gymId is known
+  useEffect(() => {
+    if (!gymId) return;
+
+    let mounted = true;
+
+    async function loadMembers() {
+      setLoadingMembers(true);
+      setError("");
+
+      try {
+        // A) ALL
+        const allRes = await api.get(`/api/gyms/${gymId}/members/`);
+        const allList = Array.isArray(allRes.data) ? allRes.data : [];
+
+        // B) EXPIRING (<=7 days)
+        const expRes = await api.get(`/api/gyms/${gymId}/members/expiring/`, {
+          params: { days: 7 },
+        });
+        const expList = Array.isArray(expRes.data) ? expRes.data : [];
+
+        allList.sort((a, b) => (a.days_left ?? 999999) - (b.days_left ?? 999999));
+        expList.sort((a, b) => (a.days_left ?? 999999) - (b.days_left ?? 999999));
+
+        if (!mounted) return;
+        setAllMembers(allList);
+        setExpiringMembers(expList);
+      } catch (err) {
+        if (mounted) setError(parseError(err));
+      } finally {
+        if (mounted) setLoadingMembers(false);
+      }
+    }
+
+    loadMembers();
+    return () => {
+      mounted = false;
+    };
+  }, [gymId]);
+
+  const loading = loadingGym || loadingMembers;
+
+  // normalize
+  const allWithStatus = useMemo(
+    () => allMembers.map((m) => ({ ...m, status: statusFromDaysLeft(m.days_left) })),
+    [allMembers]
+  );
+
+  const expiringWithStatus = useMemo(
+    () => expiringMembers.map((m) => ({ ...m, status: statusFromDaysLeft(m.days_left) })),
+    [expiringMembers]
+  );
+
+  const stats = useMemo(() => {
+    const expired = allWithStatus.filter((m) => m.status === "expired").length;
+    const active = allWithStatus.filter((m) => m.status === "active").length;
+
+    // use expiring endpoint for accuracy
+    const expiring = expiringWithStatus.filter((m) => m.status === "expiring").length;
+
+    return { expired, expiring, active };
+  }, [allWithStatus, expiringWithStatus]);
+
+  const filteredMembers = useMemo(() => {
+    if (selectedTab === "expiring") return expiringWithStatus;
+    if (selectedTab === "expired") return allWithStatus.filter((m) => m.status === "expired");
+    return allWithStatus;
+  }, [allWithStatus, expiringWithStatus, selectedTab]);
+
+  const DaysText = ({ days }) => (
+    <div
+      className={`text-lg font-semibold ${
+        days < 0 ? "text-red-400" : days <= 7 ? "text-orange-400" : "text-green-400"
+      }`}
+    >
+      {days < 0 ? `${Math.abs(days)} overdue` : `${days} days`}
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="relative min-h-[100svh] bg-black text-white">
       <Navigation />
 
-      {/* Gradient background effect */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl" />
+        <div className="absolute top-20 left-6 w-72 h-72 bg-purple-600/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-20 right-6 w-72 h-72 bg-blue-600/10 rounded-full blur-3xl" />
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl mb-2 bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
+      <div className="max-w-7xl mx-auto px-4 py-6 relative z-10">
+        <div className="mb-6">
+          <h1 className="text-3xl sm:text-4xl font-semibold bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
             Subscription Status
           </h1>
-          <p className="text-gray-400">Monitor member subscriptions and renewals</p>
+          <p className="text-gray-400 mt-1 text-sm sm:text-base">
+            Monitor member renewals & expirations
+          </p>
         </div>
 
+        {error && (
+          <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-sm whitespace-pre-line">
+            {error}
+          </div>
+        )}
+
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-2">
-              <AlertCircle className="w-5 h-5 text-red-400" />
-              <div className="text-gray-400 text-sm">Expired</div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          {[
+            {
+              label: "Expired",
+              value: stats.expired,
+              icon: <AlertCircle className="w-5 h-5 text-red-400" />,
+              color: "text-red-400",
+            },
+            {
+              label: "Expiring (≤ 7 days)",
+              value: stats.expiring,
+              icon: <Clock className="w-5 h-5 text-orange-400" />,
+              color: "text-orange-400",
+            },
+            {
+              label: "Active",
+              value: stats.active,
+              icon: <CheckCircle className="w-5 h-5 text-green-400" />,
+              color: "text-green-400",
+            },
+          ].map((stat, i) => (
+            <div
+              key={i}
+              className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-2xl p-5"
+            >
+              <div className="flex items-center gap-3 text-gray-400 text-sm">
+                {stat.icon}
+                {stat.label}
+              </div>
+              <div className={`text-3xl font-semibold mt-3 ${stat.color}`}>
+                {loading ? "…" : stat.value}
+              </div>
             </div>
-            <div className="text-3xl text-red-400">
-              {members.filter((m) => m.status === "expired").length}
-            </div>
-          </div>
-
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-2">
-              <Clock className="w-5 h-5 text-orange-400" />
-              <div className="text-gray-400 text-sm">Expiring Soon ({"<"}7 days)</div>
-            </div>
-            <div className="text-3xl text-orange-400">
-              {members.filter((m) => m.daysRemaining > 0 && m.daysRemaining < 7).length}
-            </div>
-          </div>
-
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-2">
-              <CheckCircle className="w-5 h-5 text-green-400" />
-              <div className="text-gray-400 text-sm">Active</div>
-            </div>
-            <div className="text-3xl text-green-400">
-              {members.filter((m) => m.status === "active").length}
-            </div>
-          </div>
+          ))}
         </div>
 
         {/* Tabs */}
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-2 mb-6 inline-flex">
-          <button
-            onClick={() => setSelectedTab("all")}
-            className={`px-6 py-2 rounded-xl transition-all ${
-              selectedTab === "all"
-                ? "bg-white/10 text-white"
-                : "text-gray-400 hover:text-white"
-            }`}
-          >
-            All Members
-          </button>
-          <button
-            onClick={() => setSelectedTab("expiring")}
-            className={`px-6 py-2 rounded-xl transition-all ${
-              selectedTab === "expiring"
-                ? "bg-white/10 text-white"
-                : "text-gray-400 hover:text-white"
-            }`}
-          >
-            Expiring Soon
-          </button>
-          <button
-            onClick={() => setSelectedTab("expired")}
-            className={`px-6 py-2 rounded-xl transition-all ${
-              selectedTab === "expired"
-                ? "bg-white/10 text-white"
-                : "text-gray-400 hover:text-white"
-            }`}
-          >
-            Expired
-          </button>
-        </div>
-
-        {/* Members List */}
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-white/10">
-                  <th className="text-left px-6 py-4 text-gray-400 text-sm">Priority</th>
-                  <th className="text-left px-6 py-4 text-gray-400 text-sm">Member</th>
-                  <th className="text-left px-6 py-4 text-gray-400 text-sm">Contact</th>
-                  <th className="text-left px-6 py-4 text-gray-400 text-sm">Plan</th>
-                  <th className="text-left px-6 py-4 text-gray-400 text-sm">End Date</th>
-                  <th className="text-left px-6 py-4 text-gray-400 text-sm">Days Remaining</th>
-                  <th className="text-left px-6 py-4 text-gray-400 text-sm">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredMembers.map((member, index) => (
-                  <tr
-                    key={member.id}
-                    className={`border-b border-white/5 transition-colors ${
-                      member.status === "expired"
-                        ? "bg-red-500/5 hover:bg-red-500/10"
-                        : member.daysRemaining < 7
-                        ? "bg-orange-500/5 hover:bg-orange-500/10"
-                        : "hover:bg-white/5"
-                    }`}
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        {getStatusIcon(member.status)}
-                        <span className="text-gray-400">#{index + 1}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div>{member.name}</div>
-                    </td>
-                    <td className="px-6 py-4 text-gray-400">
-                      <div className="text-sm">{member.email}</div>
-                      <div className="text-xs text-gray-500">{member.phone}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex px-3 py-1 bg-white/10 rounded-lg text-sm">
-                        {member.plan}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-gray-400">{member.endDate}</td>
-                    <td className="px-6 py-4">
-                      <div
-                        className={`${
-                          member.daysRemaining < 0
-                            ? "text-red-400"
-                            : member.daysRemaining < 7
-                            ? "text-orange-400"
-                            : "text-green-400"
-                        }`}
-                      >
-                        {member.daysRemaining < 0
-                          ? `${Math.abs(member.daysRemaining)} days overdue`
-                          : `${member.daysRemaining} days`}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`inline-flex px-3 py-1 rounded-full text-xs ${
-                          member.status === "active"
-                            ? "bg-green-500/20 text-green-400"
-                            : member.status === "expiring"
-                            ? "bg-orange-500/20 text-orange-400"
-                            : "bg-red-500/20 text-red-400"
-                        }`}
-                      >
-                        {member.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="mb-6 overflow-x-auto">
+          <div className="inline-flex gap-2 bg-white/5 backdrop-blur-xl border border-white/10 p-2 rounded-2xl min-w-max">
+            {[
+              { key: "all", label: "All" },
+              { key: "expiring", label: "Expiring" },
+              { key: "expired", label: "Expired" },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setSelectedTab(tab.key)}
+                className={`px-5 py-2 rounded-xl text-sm transition ${
+                  selectedTab === tab.key ? "bg-white/10 text-white" : "text-gray-400 hover:text-white"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Alert Box */}
-        {members.filter((m) => m.daysRemaining < 7 && m.daysRemaining > 0).length > 0 && (
-          <div className="mt-6 bg-orange-500/10 border border-orange-500/20 rounded-2xl p-6">
-            <div className="flex items-start gap-3">
-              <Clock className="w-6 h-6 text-orange-400 flex-shrink-0 mt-1" />
-              <div>
-                <h3 className="text-lg mb-2 text-orange-400">Action Required</h3>
-                <p className="text-gray-300">
-                  {members.filter((m) => m.daysRemaining < 7 && m.daysRemaining > 0).length}{" "}
-                  member(s) have subscriptions expiring within the next 7 days. Consider reaching
-                  out for renewal.
-                </p>
+        {/* Cards */}
+        <div className="space-y-4">
+          {!loading && filteredMembers.length === 0 && (
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-5 text-gray-400">
+              No members in this category.
+            </div>
+          )}
+
+          {filteredMembers.map((m) => (
+            <div
+              key={m.id}
+              className={`bg-white/5 backdrop-blur-2xl border border-white/10 rounded-2xl p-5 shadow-lg ${
+                m.status === "expired"
+                  ? "border-red-500/30"
+                  : m.status === "expiring"
+                  ? "border-orange-500/30"
+                  : ""
+              }`}
+            >
+              <div className="flex justify-between items-start">
+                <div>
+                  <div className="text-lg font-semibold">{m.name}</div>
+                  <div className="text-sm text-gray-400 break-all">{m.phone || "—"}</div>
+                </div>
+
+                <div className="text-right">
+                  <DaysText days={m.days_left} />
+                  <div className="text-xs text-gray-500">Ends {m.end_date}</div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex justify-between items-center">
+                <span className="px-3 py-1 bg-white/10 rounded-lg text-xs">{m.plan}</span>
+                <span
+                  className={`text-xs font-medium ${
+                    m.status === "expired"
+                      ? "text-red-400"
+                      : m.status === "expiring"
+                      ? "text-orange-400"
+                      : "text-green-400"
+                  }`}
+                >
+                  {m.status}
+                </span>
               </div>
             </div>
-          </div>
-        )}
+          ))}
+
+          {loading &&
+            allMembers.length === 0 &&
+            Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="bg-white/5 border border-white/10 rounded-2xl p-5 text-gray-600"
+              >
+                Loading…
+              </div>
+            ))}
+        </div>
       </div>
     </div>
   );
