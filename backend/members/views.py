@@ -112,6 +112,6 @@ class GymMemberDeleteView(RetrieveDestroyAPIView):
         gym = Gym.objects.filter(id=gym_id, owner=user).first()
         if not gym:
             raise NotFound("Gym not found.")
-       
+        return gym
 
   
