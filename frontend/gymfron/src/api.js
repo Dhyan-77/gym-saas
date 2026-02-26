@@ -1,17 +1,52 @@
 import axios from "axios";
 
+// Same-origin: dev uses Vite proxy, production uses Netlify proxy (netlify.toml).
+// No cross-origin = no CORS issues on mobile.
+const baseURL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
 export const api = axios.create({
-  baseURL: "http://127.0.0.1:8000",
-  headers: {
-    "Content-Type": "application/json",
-  },
+  baseURL,
+  headers: { "Content-Type": "application/json" },
+  timeout: 25000,
 });
 
-// attach JWT automatically on every request
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("access"); // ✅ changed
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+export const getApiBaseURL = () => baseURL;
+
+api.interceptors.response.use(
+  (res) => res,
+  async (error) => {
+    const originalRequest = error.config;
+
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry
+    ) {
+      originalRequest._retry = true;
+
+      const refresh = localStorage.getItem("refresh");
+
+      if (!refresh) {
+        window.location.href = "/login";
+        return;
+      }
+
+      try {
+        const res = await api.post("/api/auth/refresh/", {
+          refresh,
+        });
+
+        localStorage.setItem("access", res.data.access);
+
+        originalRequest.headers.Authorization =
+          "Bearer " + res.data.access;
+
+        return api(originalRequest);
+      } catch (err) {
+        localStorage.clear();
+        window.location.href = "/login";
+      }
+    }
+
+    return Promise.reject(error);
   }
-  return config;
-});
+);
